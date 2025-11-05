@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="theme-color" content="#22618d" />
+    <meta
+      name="description"
+      content="A modern, offline-capable task management app"
+    />
+
+    <title>Task Manager</title>
+
+    <link rel="manifest" href="manifest.json" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide-icons"></script>
+
+    <style>
+      /* CSS Variables for Theme */
+      :root {
+        --color-primary: 34 97 141;
+        --color-neutral-light: 245 245 245;
+        --color-neutral-dark: 23 23 23;
+        --color-text-light: 10 10 10;
+        --color-text-dark: 250 250 250;
+        --color-semantic-success: 22 163 74;
+        --color-semantic-danger: 220 38 38;
+      }
+
+      /* System Font Stack */
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      }
+
+      /* Dark Mode */
+      @media (prefers-color-scheme: dark) {
+        body {
+          background-color: rgb(var(--color-neutral-dark));
+          color: rgb(var(--color-text-dark));
+        }
+      }
+
+      /* Custom Checkbox Styling */
+      .task-checkbox,
+      .subtask-checkbox {
+        appearance: none;
+        width: 24px;
+        height: 24px;
+        border: 2px solid rgb(var(--color-primary));
+        border-radius: 6px;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+      }
+
+      .subtask-checkbox {
+        width: 20px;
+        height: 20px;
+      }
+
+      .task-checkbox:checked,
+      .subtask-checkbox:checked {
+        background-color: rgb(var(--color-primary));
+        border-color: rgb(var(--color-primary));
+      }
+
+      .task-checkbox::after,
+      .subtask-checkbox::after {
+        content: "";
+        position: absolute;
+        display: none;
+        left: 7px;
+        top: 3px;
+        width: 5px;
+        height: 10px;
+        border: solid white;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+
+      .subtask-checkbox::after {
+        left: 6px;
+        top: 2px;
+        width: 4px;
+        height: 8px;
+      }
+
+      .task-checkbox:checked::after,
+      .subtask-checkbox:checked::after {
+        display: block;
+        animation: draw-check 0.2s ease;
+      }
+
+      @keyframes draw-check {
+        0% {
+          height: 0;
+        }
+        100% {
+          height: 10px;
+        }
+      }
+
+      /* Modal Animations */
+      .modal {
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s ease, visibility 0.2s ease;
+      }
+
+      .modal.is-open {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .modal-content {
+        transform: scale(0.9);
+        opacity: 0;
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+          opacity 0.3s ease;
+      }
+
+      .modal.is-open .modal-content {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      /* Task Card */
+      .task-card {
+        transition: all 0.2s ease;
+      }
+
+      .task-card:active {
+        transform: scale(0.98);
+      }
+
+      /* FAB Animation */
+      .fab {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .fab:active {
+        transform: scale(0.9);
+      }
+
+      /* Swipe Indicator */
+      .swipe-delete {
+        transition: transform 0.2s ease;
+      }
+
+      /* Priority Stripe */
+      .priority-high {
+        border-left: 4px solid rgb(var(--color-semantic-danger));
+      }
+      .priority-normal {
+        border-left: 4px solid rgb(var(--color-primary));
+      }
+      .priority-low {
+        border-left: 4px solid rgb(var(--color-semantic-success));
+      }
+
+      /* Toast Notification */
+      .toast {
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%) translateY(100px);
+        background: rgb(var(--color-neutral-dark));
+        color: rgb(var(--color-text-dark));
+        padding: 12px 24px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+        opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .toast {
+          background: rgb(245 245 245);
+          color: rgb(10 10 10);
+        }
+      }
+
+      .toast.show {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+      }
+
+      /* Expandable Description */
+      .task-description {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+      }
+
+      .task-description.expanded {
+        max-height: 500px;
+      }
+
+      /* Empty State */
+      .empty-state {
+        opacity: 0.6;
+      }
+
+      /* Offline Indicator */
+      .offline-indicator {
+        background: rgb(var(--color-semantic-danger));
+        color: white;
+        padding: 4px 12px;
+        font-size: 12px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body
+    class="bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-50 min-h-screen"
+  >
+    <!-- Offline Indicator -->
+    <div id="offline-indicator" class="offline-indicator hidden">
+      ⚠ Offline Mode
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white dark:bg-neutral-800 shadow-sm sticky top-0 z-40">
+      <div
+        class="max-w-[640px] mx-auto px-4 py-4 flex items-center justify-between"
+      >
+        <h1 class="text-2xl font-bold" style="color: rgb(var(--color-primary))">
+          Tasks
+        </h1>
+        <div class="flex gap-2">
+          <button
+            id="export-btn"
+            class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition"
+            title="Export Tasks"
+          >
+            <i data-lucide="download" class="w-5 h-5"></i>
+          </button>
+          <button
+            id="import-btn"
+            class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition"
+            title="Import Tasks"
+          >
+            <i data-lucide="upload" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Search & Filter Bar -->
+    <div
+      class="bg-white dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700"
+    >
+      <div class="max-w-[640px] mx-auto px-4 py-3">
+        <input
+          type="text"
+          id="search-input"
+          placeholder="Search tasks..."
+          class="w-full px-4 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <div class="flex gap-2 mt-3">
+          <button
+            class="filter-btn active px-4 py-2 rounded-lg text-sm font-medium transition"
+            data-filter="active"
+          >
+            Active
+          </button>
+          <button
+            class="filter-btn px-4 py-2 rounded-lg text-sm font-medium transition"
+            data-filter="completed"
+          >
+            Completed
+          </button>
+          <button
+            class="filter-btn px-4 py-2 rounded-lg text-sm font-medium transition"
+            data-filter="all"
+          >
+            All
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-[640px] mx-auto px-4 py-6 pb-24">
+      <!-- Task List -->
+      <div id="task-list" class="space-y-3">
+        <!-- Tasks will be rendered here -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="empty-state" class="empty-state text-center py-16 hidden">
+        <i data-lucide="clipboard-list" class="w-20 h-20 opacity-60"></i>
+        <h2 class="text-xl font-semibold mb-2">No tasks yet</h2>
+        <p class="text-neutral-500 dark:text-neutral-400">
+          Tap the + button to create your first task
+        </p>
+      </div>
+    </main>
+
+    <!-- Floating Action Button -->
+    <button
+      id="fab"
+      class="fab fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-white text-3xl z-50"
+      style="background-color: rgb(var(--color-primary))"
+    >
+      <i data-lucide="plus" class="w-8 h-8"></i>
+    </button>
+
+    <!-- Add/Edit Task Modal -->
+    <div
+      id="task-modal"
+      class="modal fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        id="modal-backdrop"
+      ></div>
+      <div
+        class="modal-content relative bg-white dark:bg-neutral-800 rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div class="p-6">
+          <h2 id="modal-title" class="text-2xl font-bold mb-4">New Task</h2>
+
+          <form id="task-form" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium mb-2">Title *</label>
+              <input
+                type="text"
+                id="task-title"
+                required
+                maxlength="200"
+                class="w-full px-4 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="What needs to be done?"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium mb-2">Description</label>
+              <textarea
+                id="task-description"
+                rows="3"
+                maxlength="1000"
+                class="w-full px-4 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Add more details..."
+              ></textarea>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium mb-2">Due Date</label>
+                <input
+                  type="date"
+                  id="task-date"
+                  class="w-full px-4 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-2">Priority</label>
+                <select
+                  id="task-priority"
+                  class="w-full px-4 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex gap-3 pt-4">
+              <button
+                type="button"
+                id="cancel-btn"
+                class="flex-1 px-6 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 font-medium hover:bg-neutral-100 dark:hover:bg-neutral-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="flex-1 px-6 py-3 rounded-lg text-white font-medium transition"
+                style="background-color: rgb(var(--color-primary))"
+              >
+                <span id="submit-btn-text">Add Task</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Subtask Modal -->
+    <div
+      id="subtask-modal"
+      class="modal fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        id="subtask-modal-backdrop"
+      ></div>
+      <div
+        class="modal-content relative bg-white dark:bg-neutral-800 rounded-2xl shadow-2xl max-w-lg w-full"
+      >
+        <div class="p-6">
+          <h2 class="text-2xl font-bold mb-4">Add Subtask</h2>
+
+          <form id="subtask-form" class="space-y-4">
+            <div>
+              <input
+                type="text"
+                id="subtask-title"
+                required
+                maxlength="200"
+                class="w-full px-4 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Subtask title..."
+              />
+            </div>
+
+            <div class="flex gap-3">
+              <button
+                type="button"
+                id="cancel-subtask-btn"
+                class="flex-1 px-6 py-3 rounded-lg border border-neutral-300 dark:border-neutral-600 font-medium hover:bg-neutral-100 dark:hover:bg-neutral-700 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="flex-1 px-6 py-3 rounded-lg text-white font-medium transition"
+                style="background-color: rgb(var(--color-primary))"
+              >
+                Add
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden File Input for Import -->
+    <input type="file" id="file-input" accept=".json" class="hidden" />
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Manifest JSON (for PWA deployment) -->
+    <script type="application/json" id="manifest-data">
+      {
+        "name": "Task Manager",
+        "short_name": "Tasks",
+        "description": "A modern, offline-capable task management app",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#ffffff",
+        "theme_color": "#22618d",
+        "icons": [
+          {
+            "src": "icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+          },
+          {
+            "src": "icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+          }
+        ]
+      }
+    </script>
+
+    <!-- Service Worker Code (for PWA deployment) -->
+    <script type="text/plain" id="sw-data">
+      const CACHE_NAME = 'task-manager-v1';
+      const urlsToCache = [
+        '/',
+        '/index.html'
+      ];
+
+      self.addEventListener('install', event => {
+        event.waitUntil(
+          caches.open(CACHE_NAME)
+            .then(cache => cache.addAll(urlsToCache))
+        );
+      });
+
+      self.addEventListener('fetch', event => {
+        event.respondWith(
+          caches.match(event.request)
+            .then(response => response || fetch(event.request))
+        );
+      });
+    </script>
+
+    <script>
+      // ============================================
+      // STATE MANAGEMENT
+      // ============================================
+      const state = {
+        tasks: [],
+        filter: "active",
+        searchQuery: "",
+        editingTaskId: null,
+        currentSubtaskParentId: null,
+      };
+
+      // ============================================
+      // DOM ELEMENT REFERENCES
+      // ============================================
+      const elements = {
+        taskList: document.getElementById("task-list"),
+        emptyState: document.getElementById("empty-state"),
+        fab: document.getElementById("fab"),
+        taskModal: document.getElementById("task-modal"),
+        subtaskModal: document.getElementById("subtask-modal"),
+        taskForm: document.getElementById("task-form"),
+        subtaskForm: document.getElementById("subtask-form"),
+        searchInput: document.getElementById("search-input"),
+        toast: document.getElementById("toast"),
+        offlineIndicator: document.getElementById("offline-indicator"),
+        fileInput: document.getElementById("file-input"),
+      };
+
+      // ============================================
+      // UTILITY FUNCTIONS
+      // ============================================
+      function generateId() {
+        return crypto.randomUUID();
+      }
+
+      function sanitizeInput(input) {
+        return input.trim().substring(0, 1000);
+      }
+
+      function formatDate(dateString) {
+        if (!dateString) return "";
+        const date = new Date(dateString);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const taskDate = new Date(date);
+        taskDate.setHours(0, 0, 0, 0);
+
+        const diffTime = taskDate - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays < 0)
+          return `<span class="text-red-600 dark:text-red-400">Overdue</span>`;
+        if (diffDays === 0)
+          return `<span class="text-amber-600 dark:text-amber-400">Today</span>`;
+        if (diffDays === 1)
+          return `<span class="text-blue-600 dark:text-blue-400">Tomorrow</span>`;
+
+        return date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        });
+      }
+
+      function showToast(message) {
+        elements.toast.textContent = message;
+        elements.toast.classList.add("show");
+        setTimeout(() => {
+          elements.toast.classList.remove("show");
+        }, 3000);
+      }
+
+      // ============================================
+      // STORAGE (PERSISTENCE)
+      // ============================================
+      function saveTasks() {
+        try {
+          localStorage.setItem("tasks", JSON.stringify(state.tasks));
+          // Auto-backup
+          const backups = JSON.parse(
+            localStorage.getItem("task-backups") || "[]"
+          );
+          backups.unshift({
+            timestamp: new Date().toISOString(),
+            data: state.tasks,
+          });
+          localStorage.setItem(
+            "task-backups",
+            JSON.stringify(backups.slice(0, 3))
+          );
+        } catch (e) {
+          showToast("Error saving tasks");
+          console.error("Storage error:", e);
+        }
+      }
+
+      function loadTasks() {
+        try {
+          const saved = localStorage.getItem("tasks");
+          if (saved) {
+            state.tasks = JSON.parse(saved);
+            // Validate data structure
+            state.tasks = state.tasks.filter(
+              (task) =>
+                task.id && task.title && typeof task.completed === "boolean"
+            );
+          }
+        } catch (e) {
+          console.error("Load error:", e);
+          // Try to restore from backup
+          try {
+            const backups = JSON.parse(
+              localStorage.getItem("task-backups") || "[]"
+            );
+            if (backups.length > 0) {
+              state.tasks = backups[0].data;
+              showToast("Restored from backup");
+            }
+          } catch (backupError) {
+            showToast("Error loading tasks");
+          }
+        }
+      }
+
+      // ============================================
+      // CORE LOGIC (CRUD)
+      // ============================================
+      function addTask(taskData) {
+        const task = {
+          id: generateId(),
+          title: sanitizeInput(taskData.title),
+          description: sanitizeInput(taskData.description || ""),
+          dueDate: taskData.dueDate || null,
+          priority: taskData.priority || "normal",
+          completed: false,
+          createdAt: new Date().toISOString(),
+          subtasks: [],
+        };
+        state.tasks.unshift(task);
+        saveTasks();
+        renderTasks();
+        showToast("Task added");
+      }
+
+      function updateTask(taskId, updates) {
+        const taskIndex = state.tasks.findIndex((t) => t.id === taskId);
+        if (taskIndex !== -1) {
+          state.tasks[taskIndex] = { ...state.tasks[taskIndex], ...updates };
+          saveTasks();
+          renderTasks();
+          showToast("Task updated");
+        }
+      }
+
+      function toggleTaskComplete(taskId) {
+        const task = state.tasks.find((t) => t.id === taskId);
+        if (task) {
+          task.completed = !task.completed;
+          // If completing parent, complete all subtasks
+          if (task.completed && task.subtasks) {
+            task.subtasks.forEach((st) => (st.completed = true));
+          }
+          saveTasks();
+          renderTasks();
+        }
+      }
+
+      function deleteTask(taskId) {
+        state.tasks = state.tasks.filter((t) => t.id !== taskId);
+        saveTasks();
+        renderTasks();
+        showToast("Task deleted");
+      }
+
+      function addSubtask(parentTaskId, subtaskTitle) {
+        const task = state.tasks.find((t) => t.id === parentTaskId);
+        if (task) {
+          const subtask = {
+            id: generateId(),
+            title: sanitizeInput(subtaskTitle),
+            completed: false,
+          };
+          task.subtasks.push(subtask);
+          saveTasks();
+          renderTasks();
+          showToast("Subtask added");
+        }
+      }
+
+      function toggleSubtaskComplete(taskId, subtaskId) {
+        const task = state.tasks.find((t) => t.id === taskId);
+        if (task) {
+          const subtask = task.subtasks.find((st) => st.id === subtaskId);
+          if (subtask) {
+            subtask.completed = !subtask.completed;
+            // Auto-complete parent if all subtasks are done
+            if (
+              task.subtasks.every((st) => st.completed) &&
+              task.subtasks.length > 0
+            ) {
+              task.completed = true;
+            }
+            saveTasks();
+            renderTasks();
+          }
+        }
+      }
+
+      function deleteSubtask(taskId, subtaskId) {
+        const task = state.tasks.find((t) => t.id === taskId);
+        if (task) {
+          task.subtasks = task.subtasks.filter((st) => st.id !== subtaskId);
+          saveTasks();
+          renderTasks();
+        }
+      }
+
+      // ============================================
+      // VIEW / RENDER FUNCTIONS
+      // ============================================
+      function getFilteredTasks() {
+        let filtered = state.tasks;
+
+        // Apply status filter
+        if (state.filter === "active") {
+          filtered = filtered.filter((t) => !t.completed);
+        } else if (state.filter === "completed") {
+          filtered = filtered.filter((t) => t.completed);
+        }
+
+        // Apply search
+        if (state.searchQuery) {
+          const query = state.searchQuery.toLowerCase();
+          filtered = filtered.filter(
+            (t) =>
+              t.title.toLowerCase().includes(query) ||
+              (t.description && t.description.toLowerCase().includes(query))
+          );
+        }
+
+        // Sort: active first, then by creation date
+        return filtered.sort((a, b) => {
+          if (a.completed !== b.completed) {
+            return a.completed ? 1 : -1;
+          }
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        });
+      }
+
+      function renderTasks() {
+        const tasks = getFilteredTasks();
+
+        if (tasks.length === 0) {
+          elements.taskList.innerHTML = "";
+          elements.emptyState.classList.remove("hidden");
+          return;
+        }
+
+        elements.emptyState.classList.add("hidden");
+
+        elements.taskList.innerHTML = tasks
+          .map((task) => {
+            const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+            const completedSubtasks = hasSubtasks
+              ? task.subtasks.filter((st) => st.completed).length
+              : 0;
+            const progressText = hasSubtasks
+              ? `${completedSubtasks}/${task.subtasks.length}`
+              : "";
+
+            return `
+                    <div class="task-card bg-white dark:bg-neutral-800 rounded-xl shadow-sm p-4 priority-${
+                      task.priority
+                    } ${task.completed ? "opacity-50" : ""}" 
+                         data-task-id="${task.id}"
+                         draggable="false">
+                        
+                        <!-- Main Task Row -->
+                        <div class="flex items-start gap-3">
+                            <input 
+                                type="checkbox" 
+                                class="task-checkbox mt-1" 
+                                ${task.completed ? "checked" : ""}
+                                data-action="toggle"
+                            >
+                            
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-start justify-between gap-2">
+                                    <h3 class="font-semibold text-lg ${
+                                      task.completed
+                                        ? "line-through text-gray-500 dark:text-gray-400"
+                                        : ""
+                                    }" 
+                                        data-action="expand">
+                                        ${task.title}
+                                    </h3>
+                                    <div class="flex gap-1 flex-shrink-0">
+                                        <button class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition" 
+                                                data-action="edit" 
+                                                title="Edit">
+                                            <i data-lucide="pencil" class="w-4 h-4"></i>
+                                        </button>
+                                        <button class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition" 
+                                                data-action="delete"
+                                                title="Delete">
+                                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                ${
+                                  task.dueDate
+                                    ? `<div class="text-sm mt-1"><span class="flex items-center"><i data-lucide="calendar" class="w-4 h-4 mr-1.5 opacity-70"></i> ${formatDate(
+                                        task.dueDate
+                                      )}</span></div>`
+                                    : ""
+                                }
+                                
+                                ${
+                                  hasSubtasks
+                                    ? `
+                                    <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                        <span class="flex items-center"><i data-lucide="check-square" class="w-4 h-4 mr-1.5 opacity-70"></i> ${progressText} subtasks</span>
+                                    </div>
+                                `
+                                    : ""
+                                }
+                                
+                                <!-- Expandable Description -->
+                                ${
+                                  task.description
+                                    ? `
+                                    <div class="task-description mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                        ${task.description}
+                                    </div>
+                                `
+                                    : ""
+                                }
+                                
+                                <!-- Subtasks -->
+                                ${
+                                  hasSubtasks
+                                    ? `
+                                    <div class="mt-3 space-y-2 pl-2 border-l-2 border-neutral-200 dark:border-neutral-700">
+                                        ${task.subtasks
+                                          .map(
+                                            (subtask) => `
+                                            <div class="flex items-center gap-2 text-sm" data-subtask-id="${
+                                              subtask.id
+                                            }">
+                                                <input 
+                                                    type="checkbox" 
+                                                    class="subtask-checkbox" 
+                                                    ${
+                                                      subtask.completed
+                                                        ? "checked"
+                                                        : ""
+                                                    }
+                                                    data-action="toggle-subtask"
+                                                >
+                                                <span class="${
+                                                  subtask.completed
+                                                    ? "line-through text-gray-500 dark:text-gray-400"
+                                                    : ""
+                                                }">
+                                                    ${subtask.title}
+                                                </span>
+                                                <button class="ml-auto p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded transition text-xs" 
+                                                        data-action="delete-subtask">
+                                                    <i data-lucide="x" class="w-4 h-4"></i>
+                                                </button>
+                                            </div>
+                                        `
+                                          )
+                                          .join("")}
+                                    </div>
+                                `
+                                    : ""
+                                }
+                                
+                                <!-- Add Subtask Button -->
+                                <button class="mt-3 text-sm font-medium hover:underline" 
+                                        style="color: rgb(var(--color-primary))"
+                                        data-action="add-subtask">
+                                    + Add Subtask
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+          })
+          .join("");
+
+        // Add event delegation
+        attachTaskListeners();
+        lucide.createIcons();
+      }
+
+      // ============================================
+      // EVENT HANDLERS
+      // ============================================
+      function attachTaskListeners() {
+        // Remove old listener if exists
+        elements.taskList.replaceWith(elements.taskList.cloneNode(true));
+        elements.taskList = document.getElementById("task-list");
+
+        // Event delegation for all task actions
+        elements.taskList.addEventListener("click", (e) => {
+          const taskCard = e.target.closest(".task-card");
+          if (!taskCard) return;
+
+          const taskId = taskCard.dataset.taskId;
+          const action =
+            e.target.dataset.action ||
+            e.target.closest("[data-action]")?.dataset.action;
+
+          if (!action) return;
+
+          switch (action) {
+            case "toggle":
+              e.preventDefault();
+              toggleTaskComplete(taskId);
+              break;
+
+            case "edit":
+              openEditModal(taskId);
+              break;
+
+            case "delete":
+              if (confirm("Delete this task?")) {
+                deleteTask(taskId);
+              }
+              break;
+
+            case "expand":
+              const description = taskCard.querySelector(".task-description");
+              if (description) {
+                description.classList.toggle("expanded");
+              }
+              break;
+
+            case "add-subtask":
+              openSubtaskModal(taskId);
+              break;
+
+            case "toggle-subtask":
+              e.preventDefault();
+              const subtaskDiv = e.target.closest("[data-subtask-id]");
+              if (subtaskDiv) {
+                toggleSubtaskComplete(taskId, subtaskDiv.dataset.subtaskId);
+              }
+              break;
+
+            case "delete-subtask":
+              const subtaskToDelete = e.target.closest("[data-subtask-id]");
+              if (subtaskToDelete) {
+                deleteSubtask(taskId, subtaskToDelete.dataset.subtaskId);
+              }
+              break;
+          }
+        });
+
+        // Touch events for swipe-to-delete (mobile)
+        let touchStartX = 0;
+        let touchEndX = 0;
+        let currentCard = null;
+
+        elements.taskList.addEventListener(
+          "touchstart",
+          (e) => {
+            const taskCard = e.target.closest(".task-card");
+            if (taskCard) {
+              touchStartX = e.changedTouches[0].screenX;
+              currentCard = taskCard;
+            }
+          },
+          { passive: true }
+        );
+
+        elements.taskList.addEventListener(
+          "touchmove",
+          (e) => {
+            if (currentCard) {
+              touchEndX = e.changedTouches[0].screenX;
+              const diff = touchStartX - touchEndX;
+              if (diff > 0 && diff < 150) {
+                currentCard.style.transform = `translateX(-${diff}px)`;
+              }
+            }
+          },
+          { passive: true }
+        );
+
+        elements.taskList.addEventListener("touchend", (e) => {
+          if (currentCard) {
+            const diff = touchStartX - touchEndX;
+            if (diff > 100) {
+              const taskId = currentCard.dataset.taskId;
+              if (confirm("Delete this task?")) {
+                deleteTask(taskId);
+              }
+            }
+            currentCard.style.transform = "";
+            currentCard = null;
+          }
+        });
+      }
+
+      // ============================================
+      // MODAL FUNCTIONS
+      // ============================================
+      function openModal() {
+        state.editingTaskId = null;
+        document.getElementById("modal-title").textContent = "New Task";
+        document.getElementById("submit-btn-text").textContent = "Add Task";
+        elements.taskForm.reset();
+        elements.taskModal.classList.add("is-open");
+        document.getElementById("task-title").focus();
+      }
+
+      function openEditModal(taskId) {
+        const task = state.tasks.find((t) => t.id === taskId);
+        if (!task) return;
+
+        state.editingTaskId = taskId;
+        document.getElementById("modal-title").textContent = "Edit Task";
+        document.getElementById("submit-btn-text").textContent = "Save Changes";
+
+        document.getElementById("task-title").value = task.title;
+        document.getElementById("task-description").value =
+          task.description || "";
+        document.getElementById("task-date").value = task.dueDate || "";
+        document.getElementById("task-priority").value =
+          task.priority || "normal";
+
+        elements.taskModal.classList.add("is-open");
+        document.getElementById("task-title").focus();
+      }
+
+      function closeModal() {
+        elements.taskModal.classList.remove("is-open");
+        elements.taskForm.reset();
+        state.editingTaskId = null;
+      }
+
+      function openSubtaskModal(taskId) {
+        state.currentSubtaskParentId = taskId;
+        elements.subtaskModal.classList.add("is-open");
+        document.getElementById("subtask-title").focus();
+      }
+
+      function closeSubtaskModal() {
+        elements.subtaskModal.classList.remove("is-open");
+        elements.subtaskForm.reset();
+        state.currentSubtaskParentId = null;
+      }
+
+      // ============================================
+      // EXPORT / IMPORT
+      // ============================================
+      function exportTasks() {
+        const dataStr = JSON.stringify(state.tasks, null, 2);
+        const dataBlob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `tasks-backup-${
+          new Date().toISOString().split("T")[0]
+        }.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        showToast("Tasks exported");
+      }
+
+      function importTasks(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const imported = JSON.parse(e.target.result);
+            if (Array.isArray(imported)) {
+              const validTasks = imported.filter(
+                (task) =>
+                  task.id && task.title && typeof task.completed === "boolean"
+              );
+
+              if (
+                confirm(
+                  `Import ${validTasks.length} tasks? This will replace your current tasks.`
+                )
+              ) {
+                state.tasks = validTasks;
+                saveTasks();
+                renderTasks();
+                showToast("Tasks imported successfully");
+              }
+            } else {
+              showToast("Invalid file format");
+            }
+          } catch (error) {
+            showToast("Error reading file");
+            console.error("Import error:", error);
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      // ============================================
+      // SEARCH & FILTER
+      // ============================================
+      let searchTimeout;
+      function handleSearch(query) {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          state.searchQuery = query.trim();
+          renderTasks();
+        }, 300);
+      }
+
+      function setFilter(filter) {
+        state.filter = filter;
+        document.querySelectorAll(".filter-btn").forEach((btn) => {
+          btn.classList.remove("active");
+          if (btn.dataset.filter === filter) {
+            btn.classList.add("active");
+          }
+        });
+        renderTasks();
+      }
+
+      // ============================================
+      // OFFLINE DETECTION
+      // ============================================
+      function updateOnlineStatus() {
+        if (!navigator.onLine) {
+          elements.offlineIndicator.classList.remove("hidden");
+        } else {
+          elements.offlineIndicator.classList.add("hidden");
+        }
+      }
+
+      // ============================================
+      // EVENT LISTENERS
+      // ============================================
+
+      // FAB - Open new task modal
+      elements.fab.addEventListener("click", openModal);
+
+      // Modal backdrop close
+      document
+        .getElementById("modal-backdrop")
+        .addEventListener("click", closeModal);
+      document
+        .getElementById("subtask-modal-backdrop")
+        .addEventListener("click", closeSubtaskModal);
+
+      // Cancel buttons
+      document
+        .getElementById("cancel-btn")
+        .addEventListener("click", closeModal);
+      document
+        .getElementById("cancel-subtask-btn")
+        .addEventListener("click", closeSubtaskModal);
+
+      // Task form submission
+      elements.taskForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+
+        const taskData = {
+          title: document.getElementById("task-title").value,
+          description: document.getElementById("task-description").value,
+          dueDate: document.getElementById("task-date").value,
+          priority: document.getElementById("task-priority").value,
+        };
+
+        if (state.editingTaskId) {
+          updateTask(state.editingTaskId, taskData);
+        } else {
+          addTask(taskData);
+        }
+
+        closeModal();
+      });
+
+      // Subtask form submission
+      elements.subtaskForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const subtaskTitle = document.getElementById("subtask-title").value;
+        if (subtaskTitle && state.currentSubtaskParentId) {
+          addSubtask(state.currentSubtaskParentId, subtaskTitle);
+          closeSubtaskModal();
+        }
+      });
+
+      // Search input
+      elements.searchInput.addEventListener("input", (e) => {
+        handleSearch(e.target.value);
+      });
+
+      // Filter buttons
+      document.querySelectorAll(".filter-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          setFilter(btn.dataset.filter);
+        });
+      });
+
+      // Export button
+      document
+        .getElementById("export-btn")
+        .addEventListener("click", exportTasks);
+
+      // Import button
+      document.getElementById("import-btn").addEventListener("click", () => {
+        elements.fileInput.click();
+      });
+
+      elements.fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          importTasks(file);
+          e.target.value = ""; // Reset input
+        }
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener("keydown", (e) => {
+        // Escape to close modals
+        if (e.key === "Escape") {
+          if (elements.taskModal.classList.contains("is-open")) {
+            closeModal();
+          }
+          if (elements.subtaskModal.classList.contains("is-open")) {
+            closeSubtaskModal();
+          }
+        }
+
+        // Ctrl/Cmd + N for new task
+        if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+          e.preventDefault();
+          openModal();
+        }
+      });
+
+      // Online/Offline detection
+      window.addEventListener("online", updateOnlineStatus);
+      window.addEventListener("offline", updateOnlineStatus);
+
+      // ============================================
+      // FILTER BUTTON STYLING
+      // ============================================
+      const style = document.createElement("style");
+      style.textContent = `
+            .filter-btn {
+                background-color: transparent;
+                color: rgb(var(--color-text-light));
+            }
+            
+            @media (prefers-color-scheme: dark) {
+                .filter-btn {
+                    color: rgb(var(--color-text-dark));
+                }
+            }
+            
+            .filter-btn.active {
+                background-color: rgb(var(--color-primary));
+                color: white;
+            }
+            
+            .filter-btn:hover:not(.active) {
+                background-color: rgba(var(--color-primary), 0.1);
+            }
+        `;
+      document.head.appendChild(style);
+
+      // ============================================
+      // INITIALIZATION
+      // ============================================
+      document.addEventListener("DOMContentLoaded", () => {
+        loadTasks();
+        renderTasks();
+        updateOnlineStatus();
+
+        // Register service worker for PWA
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker
+            .register("sw.js")
+            .then(() => console.log("Service Worker registered"))
+            .catch((err) =>
+              console.log("Service Worker registration failed:", err)
+            );
+        }
+
+        // Install prompt
+        let deferredPrompt;
+        window.addEventListener("beforeinstallprompt", (e) => {
+          e.preventDefault();
+          deferredPrompt = e;
+
+          // Show install prompt after user creates 2 tasks
+          if (state.tasks.length >= 2) {
+            setTimeout(() => {
+              if (
+                deferredPrompt &&
+                confirm("Install Task Manager as an app on your device?")
+              ) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                  deferredPrompt = null;
+                });
+              }
+            }, 3000);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
